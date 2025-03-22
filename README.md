@@ -8,7 +8,7 @@ A simple, and fast Rust library to look for **Bitcoin** hidden in arrays of **wo
 - [x] Given a vector (M) of bip39::Mnemonic (m) and a set (A) of addresses (a), discover wether some **m**s generate any of the given **a**s.
 
 ## How to use
-Generate and see Rust documentation with
+Generate and read Rust documentation with
 ```sh
 cargo doc --open
 ```

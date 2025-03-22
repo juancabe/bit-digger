@@ -1,6 +1,6 @@
 [package]
 name = "bit-digger"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Juan Calzada"]
 
@@ -8,6 +8,7 @@ description = "A simple, and fast Rust library to look for Bitcoin hidden in arr
 readme = "README.md"
 license = "MIT"
 repository = "https://github.com/juancabe/bit-digger"
+documentation = "https://docs.rs/bit-digger"
 
 [dependencies]
 bip39 = "2.1.0"

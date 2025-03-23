@@ -7,6 +7,9 @@ A simple, and fast Rust library to look for **Bitcoin** hidden in arrays of **wo
 ## Features
 - [x] Given a vector (M) of bip39::Mnemonic (m) and a set (A) of addresses (a), discover wether some **m**s generate any of the given **a**s.
 
+## TODOs
+- [ ] Module that is able to, given different types of word inputs, generate a vector of bip39::Mnemonic.
+
 ## How to use
 Generate and read Rust documentation with
 ```sh

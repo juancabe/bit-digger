@@ -1,6 +1,10 @@
-use std::{collections::HashSet, str::FromStr};
+use core::time;
+use std::{collections::HashSet, hash::BuildHasherDefault, str::FromStr};
 
+use ahash::AHasher;
 use bip39::Mnemonic;
+
+pub type AHashBuilder = BuildHasherDefault<AHasher>;
 
 const MIN_WORDS: usize = 12;
 const MAX_WORDS: usize = 24;
@@ -30,23 +34,28 @@ pub enum MnemFetchError {
 /// `set_word_ns(word_ns: Vec<usize>)`: Sets the valid mnemonic lengths
 /// `add_from_words(words: &[&str]) -> &[Mnemonic]`: Creates mnemonics from the given words and adds them to the internal collection
 pub struct MnemFetcher<'a> {
-    pub gen_mnemonics: Vec<Mnemonic>,
-    wordlist: HashSet<&'a str>,
+    pub gen_mnemonics: HashSet<bip39::Mnemonic, AHashBuilder>,
+    wordlist: HashSet<&'a str, AHashBuilder>,
     word_ns: Vec<usize>,
+    lang: bip39::Language,
 }
 
 impl<'a> MnemFetcher<'a> {
     pub fn new(lang: bip39::Language) -> Self {
+        let wordlist: HashSet<&'a str, AHashBuilder> =
+            lang.word_list().into_iter().map(|w| *w).collect();
+
         MnemFetcher {
-            gen_mnemonics: Vec::new(),
-            wordlist: lang.word_list().into_iter().map(|w| *w).collect(),
+            gen_mnemonics: HashSet::with_hasher(AHashBuilder::default()),
+            wordlist,
             word_ns: vec![MIN_WORDS, MAX_WORDS],
+            lang,
         }
     }
 
     /// Just add one already created mnemonic
     pub fn add_one(&mut self, mnemonic: Mnemonic) {
-        self.gen_mnemonics.push(mnemonic);
+        self.gen_mnemonics.insert(mnemonic);
     }
 
     /// Set word_ns
@@ -100,76 +109,72 @@ impl<'a> MnemFetcher<'a> {
     ///   "absurd", "abuse", "access", "accident",
     /// ];
     /// let mnemonics = mf.add_from_words(&invalid_words);
-    /// assert_eq!(mnemonics.len(), 0);
+    /// assert_eq!(mnemonics, 0);
     /// ```
-    pub fn add_from_words(&mut self, words: &[&str]) -> &[Mnemonic] {
-        // let words = words.into_iter().filter(|w| self.wordlist.contains(w));
+    pub fn add_from_words(&mut self, words: &[&str]) -> usize {
+        let mut valid_words_str = String::with_capacity(words.len() * 10); // String that contains all the valid words
+        let mut valid_words_start_ptr: Vec<usize> = Vec::with_capacity(words.len()); // Pointer to the start of each (word )
+        //                                                                                                                (^    )
+        let mut valid_words_end_ptr: Vec<usize> = Vec::with_capacity(words.len()); // Pointer to the end of each (word )
+        //                                                                                                       (    ^)
 
-        let valid_words = words
-            .iter()
-            .filter(|w| self.wordlist.contains(**w))
-            .map(|w| *w)
-            .collect::<Vec<&str>>();
-
-        let mut valid_words_str = String::new(); // String that contains all the valid words
-        let mut valid_words_ptr: Vec<usize> = vec![0; valid_words.len()]; // Pointer to the start of each (word )
-        //                                                                                                (^    )
+        self.gen_mnemonics.reserve(words.len() / 1000);
 
         // Construct the words String along with the pointers
-        for (i, w) in valid_words.iter().enumerate() {
-            valid_words_ptr[i] = valid_words_str.len();
-            valid_words_str.push_str(w);
-            valid_words_str.push_str(" ");
-        }
-        assert_eq!(valid_words.len(), valid_words_ptr.len());
-
-        let mut valid_mnemonics = vec![];
-
-        for wc in self.word_ns.iter() {
-            if *wc > valid_words_ptr.len() {
+        for w in words {
+            if !self.wordlist.contains(w) {
                 continue;
             }
-            for start_at in 0..valid_words_ptr.len() - (wc - 1) {
-                MnemFetcher::window_check(
+
+            valid_words_start_ptr.push(valid_words_str.len());
+            valid_words_str.push_str(w);
+            valid_words_end_ptr.push(valid_words_str.len());
+            valid_words_str.push_str(" ");
+        }
+
+        let mut valid_mnemonics = 0;
+
+        for wc in self.word_ns.clone() {
+            if wc > valid_words_start_ptr.len() {
+                continue;
+            }
+            for start_at in 0..valid_words_start_ptr.len() - (wc - 1) {
+                if self.window_check(
                     &valid_words_str,
-                    &valid_words_ptr,
+                    &valid_words_start_ptr,
+                    &valid_words_end_ptr,
                     start_at,
-                    *wc,
-                    &mut valid_mnemonics,
-                );
+                    wc,
+                ) {
+                    valid_mnemonics += 1;
+                }
             }
         }
 
-        // Only keep unique mnemonics
-        valid_mnemonics.sort();
-        valid_mnemonics.dedup();
-
-        let vml = valid_mnemonics.len();
-
-        self.gen_mnemonics.extend(valid_mnemonics);
-
-        &self.gen_mnemonics[self.gen_mnemonics.len() - vml..]
+        valid_mnemonics
     }
 
     /// Internal function to check wether a &str slice contains a valid mnemonic of `wc` words
     fn window_check(
+        &mut self,
         valid_words: &str,
-        valid_words_ptr: &[usize],
+        valid_words_start_ptr: &[usize],
+        valid_words_end_ptr: &[usize],
         start_at: usize,
         wc: usize,
-        valid_mnemonics: &mut Vec<Mnemonic>,
-    ) {
-        let start_index = valid_words_ptr[start_at];
-        let end_index = valid_words_ptr[start_at + wc - 1]
-            + valid_words[valid_words_ptr[start_at + wc - 1]..]
-                .find(" ")
-                .unwrap();
+    ) -> bool {
+        let start_index = valid_words_start_ptr[start_at];
+        let end_index = valid_words_end_ptr[start_at + wc - 1];
 
-        let mnemonic = Mnemonic::from_str(&valid_words[start_index..end_index]);
+        let mnemonic =
+            Mnemonic::parse_in_normalized(self.lang, &valid_words[start_index..end_index]);
 
         if mnemonic.is_ok() {
-            valid_mnemonics.push(mnemonic.unwrap());
+            self.gen_mnemonics.insert(mnemonic.unwrap());
+            return true;
         }
+
+        return false;
     }
 }
 
@@ -207,7 +212,7 @@ mod tests {
         let binding = VALID_MNEMONIC.to_string();
         let mut words = binding.split_whitespace().collect::<Vec<&str>>();
 
-        let mnemonics1 = mf.add_from_words(&words)[0].clone();
+        let mnemonics1 = mf.add_from_words(&words);
 
         words.push("aaaa");
         words.push("aaaa");
@@ -216,18 +221,18 @@ mod tests {
         words.push("aaaa");
         words.push("aaaa");
 
-        let mnemonics2 = mf.add_from_words(&words)[0].clone();
-
-        words.reverse();
-
-        words.push("aaaa");
-        words.push("aaaa");
-        words.push("aaaa");
-        words.push("aaaa");
+        let mnemonics2 = mf.add_from_words(&words);
 
         words.reverse();
 
-        let mnemonics3 = mf.add_from_words(&words)[0].clone();
+        words.push("aaaa");
+        words.push("aaaa");
+        words.push("aaaa");
+        words.push("aaaa");
+
+        words.reverse();
+
+        let mnemonics3 = mf.add_from_words(&words);
 
         assert_eq!(mnemonics1, mnemonics2);
         assert_eq!(mnemonics2, mnemonics3);
@@ -244,7 +249,7 @@ mod tests {
 
         let mnemonics = mf.add_from_words(&words);
 
-        assert_eq!(mnemonics.len(), 0);
+        assert_eq!(mnemonics, 0);
 
         let binding = VALID_MNEMONIC.to_string();
         let mut words = binding.split_whitespace().collect::<Vec<&str>>();
@@ -252,7 +257,7 @@ mod tests {
         words.insert(words.len() / 2, "aaaaaa");
 
         let mnemonics = mf.add_from_words(&words);
-        assert_eq!(mnemonics.len(), 0);
+        assert_eq!(mnemonics, 0);
     }
 
     #[test]

@@ -1,5 +1,4 @@
-use core::time;
-use std::{collections::HashSet, hash::BuildHasherDefault, str::FromStr};
+use std::{collections::HashSet, hash::BuildHasherDefault};
 
 use ahash::AHasher;
 use bip39::Mnemonic;
@@ -180,6 +179,8 @@ impl<'a> MnemFetcher<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[test]

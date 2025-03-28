@@ -219,7 +219,7 @@ fn modify_path_index(path: &mut String, index: usize) -> Result<(), MatcherError
 /// - `logging`: A boolean flag to enable or disable logging during operations.
 pub struct Matcher<'a, 'b> {
     pub addrs: &'a HashSet<String>,
-    pub mnems: &'b Vec<Mnemonic>,
+    pub mnems: &'b [Mnemonic],
     pub logging: bool,
 }
 
@@ -254,7 +254,7 @@ impl<'a, 'b> Matcher<'a, 'b> {
     /// ```
     pub fn new(
         addrs: &'a HashSet<String>,
-        mnems: &'b Vec<Mnemonic>,
+        mnems: &'b [Mnemonic],
         logging: bool,
     ) -> Matcher<'a, 'b> {
         Matcher {
@@ -327,6 +327,10 @@ impl<'a, 'b> Matcher<'a, 'b> {
                     .map(|s| (s.clone(), 0))
                     .collect::<Vec<(DerivationStandard, usize)>>();
 
+                if self.logging {
+                    println!("Starting automatic derivation amount inference");
+                }
+
                 for addr in self.addrs.iter() {
                     let standard = match DerivationStandard::from_address(addr) {
                         Some(s) => s,
@@ -342,18 +346,22 @@ impl<'a, 'b> Matcher<'a, 'b> {
                         .map(|s| s.1 += 1);
                 }
 
-                if self.logging {
-                    println!(
-                        "Found {} addresses whose standard is not supported",
-                        unmatched_addresses.len()
-                    );
-                }
-
                 let total = standards.iter().fold(0, |acc, s| acc + s.1);
 
                 for standard in standards.iter_mut() {
                     standard.1 = (standard.1 as f64 / total as f64 * addr_to_gen_per_mnem as f64)
                         .ceil() as usize;
+                }
+
+                if self.logging {
+                    println!(
+                        "Found {} addresses whose standard is not supported",
+                        unmatched_addresses.len()
+                    );
+
+                    for standard in standards.iter() {
+                        println!("Standard: {}, Amount: {}", standard.0.base_path, standard.1);
+                    }
                 }
 
                 standards
@@ -362,13 +370,25 @@ impl<'a, 'b> Matcher<'a, 'b> {
 
         let mut found = HashMap::new();
 
-        for mnemonic in self.mnems.iter() {
+        for (index, mnemonic) in self.mnems.iter().enumerate() {
             let addresses = Self::generate_addresses(&amount, mnemonic)?;
 
             for addr in addresses {
                 if self.addrs.contains(&addr) {
+                    if self.logging {
+                        println!("Found address {} for mnemonic {:?}", addr, mnemonic);
+                    }
                     found.entry(mnemonic).or_insert(vec![]).push(addr);
                 }
+            }
+
+            if self.logging && (self.mnems.len() / 10 > 0) && index % (self.mnems.len() / 10) == 0 {
+                println!(
+                    "Processed {}% of the mnemonics ({}/{})",
+                    index * 100 / self.mnems.len(),
+                    index,
+                    self.mnems.len()
+                );
             }
         }
 

@@ -1,20 +1,6 @@
 use bit_digger::mnem_fetch::MnemFetcher;
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprint!("Usage: {} <directory> [max_amount]", args[0]);
-        std::process::exit(1);
-    }
-
-    let directory = &args[1];
-
-    let max_amount = if args.len() == 3 {
-        Some(args[2].parse::<usize>().expect("Invalid max_amount"))
-    } else {
-        None
-    };
-
+fn get_mnems(directory: &str, max_amount: Option<usize>) -> MnemFetcher {
     println!("Searching for .txt files in {}", directory);
     // Search for all .txt files in the directory recursively
     let walker = walkdir::WalkDir::new(directory)
@@ -50,4 +36,24 @@ fn main() {
     }
 
     println!("Generated mnemonics: {}", mnem_fetcher.gen_mnemonics.len());
+
+    mnem_fetcher
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        eprint!("Usage: {} <directory> [max_amount]", args[0]);
+        std::process::exit(1);
+    }
+
+    let directory = &args[1];
+
+    let max_amount = if args.len() == 3 {
+        Some(args[2].parse::<usize>().expect("Invalid max_amount"))
+    } else {
+        None
+    };
+
+    let _mnem_fetcher = get_mnems(directory, max_amount);
 }
